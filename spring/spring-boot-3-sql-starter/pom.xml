@@ -9,46 +9,48 @@
   ~
   ~ Copyright 2019-2022 the original author or authors.
   -->
-
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
     <parent>
         <groupId>org.quickperf</groupId>
-        <artifactId>quick-perf-sql-parent</artifactId>
+        <artifactId>quick-perf-spring</artifactId>
         <version>1.1.2-SNAPSHOT</version>
     </parent>
+
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>quick-perf-sql-annotations</artifactId>
+    <artifactId>quick-perf-springboot3-sql-starter</artifactId>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <dependencies.max.jdk.version>17</dependencies.max.jdk.version>
-        <javadoc-subpackages>org.quickperf.sql.annotation,org.quickperf.sql.config</javadoc-subpackages>
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>org.quickperf</groupId>
-            <artifactId>quick-perf-core</artifactId>
+            <artifactId>quick-perf-sql-spring6</artifactId>
             <version>1.1.2-SNAPSHOT</version>
         </dependency>
         <dependency>
-            <groupId>net.ttddyy</groupId>
-            <artifactId>datasource-proxy</artifactId>
-            <version>1.9</version>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+            <version>${spring5-version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <version>${junit4.test.version}</version>
-            <scope>test</scope>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jdbc</artifactId>
+            <version>${spring5-version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
-            <version>${mockito.core.version}</version>
-            <scope>test</scope>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+            <version>3.2.2</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
+
 </project>

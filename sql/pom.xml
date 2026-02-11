@@ -26,18 +26,8 @@
 
     <modules>
         <module>sql-annotations</module>
-        <module>sql-memory-test-util</module>
-        <module>sql-hibernate-test-util</module>
-        <module>sql-memory-test</module>
     </modules>
 
-    <profiles>
-        <profile>
-            <id>testcontainers</id>
-            <modules>
-                <module>sql-testcontainers-test</module>
-            </modules>
-        </profile>
-    </profiles>
+
 
 </project>

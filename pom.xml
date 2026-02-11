@@ -32,17 +32,14 @@
         </license>
     </licenses>
 
-    <scm>
-        <connection>scm:git:https://github.com/quick-perf/quickperf.git</connection>
-        <developerConnection>scm:git:git@github.com:quick-perf/quickperf.git</developerConnection>
-        <url>https://github.com/quick-perf/quickperf</url>
-        <tag>HEAD</tag>
-    </scm>
+
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <dependencies.max.jdk.version>1.7</dependencies.max.jdk.version>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <dependencies.max.jdk.version>17</dependencies.max.jdk.version>
         <junit4.test.version>4.12</junit4.test.version>
         <mockito.core.version>2.25.0</mockito.core.version>
         <h2.version>1.4.198</h2.version>
@@ -150,50 +147,18 @@
                 <artifactId>ayoy-license-verifier-maven-plugin</artifactId>
             </plugin>
             -->
-            <plugin>
-                <groupId>com.mycila</groupId>
-                <artifactId>license-maven-plugin</artifactId>
-                <version>4.1</version>
-                <configuration>
-                    <header>update-licence-header.txt</header>
-                    <includes>
-                        <include>src/**</include>
-                    </includes>
-                    <excludes>
-                        <exclude>src/test/resources/junit-platform.properties</exclude>
-                    </excludes>
-                    <properties>
-                        <project>${project.name}</project>
-                        <year>${project.inceptionYear}</year>
-                    </properties>
-                </configuration>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>check</goal>
-                        </goals>
-                        <phase>process-sources</phase>
-                    </execution>
-                </executions>
-            </plugin>
+
         </plugins>
 
     </build>
 
-    <issueManagement>
-        <system>github</system>
-        <url>https://github.com/quick-perf/quickperf/issues</url>
-    </issueManagement>
 
     <modules>
         <module>core</module>
         <module>jvm</module>
         <module>sql</module>
-        <module>junit4</module>
-        <module>junit5</module>
-        <module>testng</module>
         <module>spring</module>
-        <module>bom</module>
+        <module>web</module>
     </modules>
 
     <profiles>
@@ -296,124 +261,5 @@
         </repository>
     </repositories>
 
-    <developers>
-        <developer>
-            <id>jeanbisutti</id>
-            <name>Jean Bisutti</name>
-            <email>jean.bisutti@gmail.com</email>
-            <timezone>+1</timezone>
-        </developer>
-    </developers>
-
-    <contributors>
-        <contributor>
-            <name>Guillaume Raghoumandan</name>
-            <url>https://github.com/guiRagh</url>
-        </contributor>
-        <contributor>
-            <name>Alexandre Blanchard</name>
-            <url>https://github.com/ablanchard</url>
-        </contributor>
-        <contributor>
-            <name>Artus de Benque</name>
-            <url>https://github.com/Artus2b</url>
-        </contributor>
-        <contributor>
-            <name>Patrice Cavezzan</name>
-            <url>https://github.com/pcavezzan</url>
-        </contributor>
-        <contributor>
-            <name>Eric McDowell</name>
-            <url>https://github.com/emcdow123</url>
-        </contributor>
-        <contributor>
-            <name>Jan Krüger</name>
-            <url>https://github.com/waterfl0w</url>
-        </contributor>
-        <contributor>
-            <name>Loïc Mathieu</name>
-            <url>https://github.com/loicmathieu</url>
-        </contributor>
-        <contributor>
-            <name>Daniel Bentley</name>
-            <url>https://github.com/danny95djb</url>
-        </contributor>
-        <contributor>
-            <name>Gaurav Deshpande</name>
-            <url>https://github.com/gaurav9822</url>
-        </contributor>
-        <contributor>
-            <name>rdm100</name>
-            <url>https://github.com/rdm100</url>
-        </contributor>
-        <contributor>
-            <name>Minh-Trieu Ha</name>
-            <url>https://github.com/Minh-Trieu</url>
-        </contributor>
-        <contributor>
-            <name>Bakary Djiba</name>
-            <url>https://github.com/dialaya</url>
-        </contributor>
-        <contributor>
-            <name>C Faisal</name>
-            <url>https://github.com/fabfas</url>
-        </contributor>
-        <contributor>
-            <name>Thami Inaflas</name>
-            <url>https://github.com/archyoshi</url>
-        </contributor>
-        <contributor>
-            <name>José Paumard</name>
-            <url>https://github.com/JosePaumard</url>
-        </contributor>
-        <contributor>
-            <name>Edward Rose</name>
-            <url>https://github.com/edwardrose946</url>
-        </contributor>
-        <contributor>
-            <name>Ubaid ur Rehman</name>
-            <url>https://github.com/UbaidurRehman1</url>
-        </contributor>
-        <contributor>
-            <name>Giuseppe B.</name>
-            <url>https://github.com/MrSnix</url>
-        </contributor>
-        <contributor>
-            <name>Fabrice</name>
-            <url>https://github.com/FTarfasse</url>
-        </contributor>
-        <contributor>
-            <name>Navneet Kumar</name>
-            <url>https://github.com/navkumar258</url>
-        </contributor>
-        <contributor>
-            <name>Charles Sabourdin</name>
-            <url>https://github.com/kanedafromparis</url>
-        </contributor>
-        <contributor>
-            <name>Mohamed Karaga</name>
-            <url>https://github.com/MohamedKaraga</url>
-        </contributor>
-        <contributor>
-            <name>Hervé Boutemy</name>
-            <url>https://github.com/hboutemy</url>
-        </contributor>
-        <contributor>
-            <name>Franck Demeyer</name>
-            <url>https://github.com/FranckDemeyer</url>
-        </contributor>
-        <contributor>
-            <name>Oliver Hughes</name>
-            <url>https://github.com/oliver-hughes</url>
-        </contributor>
-        <contributor>
-            <name>Hedley Proctor</name>
-            <url>https://github.com/hedleyproctor</url>
-        </contributor>
-        <contributor>
-            <name>rsassi</name>
-            <url>https://github.com/rsassi</url>
-        </contributor>
-    </contributors>
 
 </project>
