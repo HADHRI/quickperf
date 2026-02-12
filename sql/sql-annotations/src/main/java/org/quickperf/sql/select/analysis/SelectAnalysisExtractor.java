@@ -28,7 +28,8 @@ public class SelectAnalysisExtractor implements ExtractablePerformanceMeasure<Sq
 
     public static final SelectAnalysisExtractor INSTANCE = new SelectAnalysisExtractor();
 
-    private SelectAnalysisExtractor() { }
+    private SelectAnalysisExtractor() {
+    }
 
     @Override
     public SelectAnalysis extractPerfMeasureFrom(SqlExecutions sqlExecutions) {
@@ -36,19 +37,24 @@ public class SelectAnalysisExtractor implements ExtractablePerformanceMeasure<Sq
         int selectNumber = sqlExecutions.retrieveQueryNumberOfType(QueryType.SELECT);
 
         boolean sameSelectTypesWithDifferentParamValues = false;
-
         int sameSelectsNumber = 0;
+        List<String> nPlusOneCallStack = null;
+        String nPlusOneQuery = null;
+        List<String> nPlusOneImpactedTables = null;
 
         SqlSelects sqlSelects = new SqlSelects();
         for (SqlExecution sqlExecution : sqlExecutions) {
             for (QueryInfo query : sqlExecution.getQueries()) {
                 if (isSelectType(query)) {
                     if (!sameSelectTypesWithDifferentParamValues
-                     && sqlSelects.sameSqlQueryWithDifferentParams(query)) {
+                            && sqlSelects.sameSqlQueryWithDifferentParams(query)) {
                         sameSelectTypesWithDifferentParamValues = true;
+                        nPlusOneCallStack = sqlExecution.getCallStack();
+                        nPlusOneQuery = query.getQuery();
+                        nPlusOneImpactedTables = org.quickperf.sql.SqlUtils.extractTableNames(nPlusOneQuery);
                     }
-                    if( sqlSelects.exactlySameSqlQueryExists(query)) {
-                        if(sameSelectsNumber == 0) {
+                    if (sqlSelects.exactlySameSqlQueryExists(query)) {
+                        if (sameSelectsNumber == 0) {
                             sameSelectsNumber = 1;
                         }
                         sameSelectsNumber++;
@@ -59,10 +65,8 @@ public class SelectAnalysisExtractor implements ExtractablePerformanceMeasure<Sq
             }
         }
 
-        return new SelectAnalysis(selectNumber
-                                , sameSelectsNumber
-                                , sameSelectTypesWithDifferentParamValues
-        );
+        return new SelectAnalysis(selectNumber, sameSelectsNumber, sameSelectTypesWithDifferentParamValues,
+                nPlusOneCallStack, nPlusOneQuery, nPlusOneImpactedTables);
 
     }
 

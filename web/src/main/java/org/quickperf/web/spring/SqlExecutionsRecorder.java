@@ -15,6 +15,7 @@ package org.quickperf.web.spring;
 import net.ttddyy.dsproxy.ExecutionInfo;
 import net.ttddyy.dsproxy.QueryInfo;
 import org.quickperf.TestExecutionContext;
+import org.quickperf.sql.SqlExecution;
 import org.quickperf.sql.SqlExecutions;
 import org.quickperf.sql.SqlRecorder;
 import org.quickperf.sql.SqlRecorderRegistry;
@@ -27,7 +28,10 @@ class SqlExecutionsRecorder implements SqlRecorder<SqlExecutions> {
 
     @Override
     public void addQueryExecution(ExecutionInfo execInfo, List<QueryInfo> queries, int listenerIdentifier) {
-        sqlExecutions.add(execInfo, queries);
+        List<String> callStack = StackTraceUtils.getCallStack();
+        SqlExecution sqlExecution = new SqlExecution(execInfo, queries);
+        sqlExecution.setCallStack(callStack);
+        sqlExecutions.add(sqlExecution);
     }
 
     @Override

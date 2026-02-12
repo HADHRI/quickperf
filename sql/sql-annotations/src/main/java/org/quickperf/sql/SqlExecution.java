@@ -38,8 +38,11 @@ public class SqlExecution implements Externalizable {
 
     private long columnCount;
 
+    private List<String> callStack;
+
     // Necessary for serialization
-    public SqlExecution() {}
+    public SqlExecution() {
+    }
 
     public SqlExecution(ExecutionInfo executionInfo, List<QueryInfo> queries) {
         this.executionInfo = executionInfo;
@@ -267,13 +270,21 @@ public class SqlExecution implements Externalizable {
     public long getColumnCount() {
         return columnCount;
     }
-    
+
     public long getElapsedTime() {
-    	return executionInfo.getElapsedTime();
+        return executionInfo.getElapsedTime();
     }
 
     public ExecutionInfo getExecutionInfo() {
         return executionInfo;
+    }
+
+    public List<String> getCallStack() {
+        return callStack;
+    }
+
+    public void setCallStack(List<String> callStack) {
+        this.callStack = callStack;
     }
 
     public boolean withStatement() {

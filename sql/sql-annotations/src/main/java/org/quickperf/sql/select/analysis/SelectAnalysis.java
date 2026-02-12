@@ -20,6 +20,7 @@ import org.quickperf.sql.framework.JdbcSuggestion;
 import org.quickperf.sql.framework.MicronautSuggestion;
 import org.quickperf.unit.Count;
 import org.quickperf.unit.NoUnit;
+import java.util.List;
 
 import static java.lang.System.*;
 
@@ -30,6 +31,12 @@ public class SelectAnalysis implements PerfMeasure {
     private final SameSelectTypesWithDifferentParamValues sameSelectTypesWithDifferentParamValues;
 
     private final Count sameSelectsNumber;
+
+    private final List<String> nPlusOneCallStack;
+
+    private final String nPlusOneQuery;
+
+    private final List<String> nPlusOneImpactedTables;
 
     public static class SameSelectTypesWithDifferentParamValues {
 
@@ -51,33 +58,36 @@ public class SelectAnalysis implements PerfMeasure {
 
     public static String getNPlusOneSelectAlert() {
 
-        if(SystemProperties.SIMPLIFIED_SQL_DISPLAY.evaluate()) {
+        if (SystemProperties.SIMPLIFIED_SQL_DISPLAY.evaluate()) {
             return "";
         }
 
         return lineSeparator()
-             + lineSeparator()
-             + JdbcSuggestion.SERVER_ROUND_TRIPS.getMessage()
-             + getNPlusOneFrameworkMessage();
+                + lineSeparator()
+                + JdbcSuggestion.SERVER_ROUND_TRIPS.getMessage()
+                + getNPlusOneFrameworkMessage();
 
     }
 
     public static String getNPlusOneFrameworkMessage() {
-        if(ClassPath.INSTANCE.containsHibernate()) {
+        if (ClassPath.INSTANCE.containsHibernate()) {
             return lineSeparator() + HibernateSuggestion.N_PLUS_ONE_SELECT.getMessage();
         }
-        if(ClassPath.INSTANCE.containsMicronautData()) {
+        if (ClassPath.INSTANCE.containsMicronautData()) {
             return lineSeparator() + MicronautSuggestion.N_PLUS_ONE_SELECT.getMessage();
         }
         return "";
     }
 
-    public SelectAnalysis(int selectNumber
-                        , int sameSelectsNumber
-                        , boolean sameSelectTypesWithDifferentParamValues) {
+    public SelectAnalysis(int selectNumber, int sameSelectsNumber, boolean sameSelectTypesWithDifferentParamValues,
+            List<String> nPlusOneCallStack, String nPlusOneQuery, List<String> nPlusOneImpactedTables) {
         this.selectNumber = new Count(selectNumber);
         this.sameSelectsNumber = new Count(sameSelectsNumber);
-        this.sameSelectTypesWithDifferentParamValues = new SameSelectTypesWithDifferentParamValues(sameSelectTypesWithDifferentParamValues);
+        this.sameSelectTypesWithDifferentParamValues = new SameSelectTypesWithDifferentParamValues(
+                sameSelectTypesWithDifferentParamValues);
+        this.nPlusOneCallStack = nPlusOneCallStack;
+        this.nPlusOneQuery = nPlusOneQuery;
+        this.nPlusOneImpactedTables = nPlusOneImpactedTables;
     }
 
     public Count getSelectNumber() {
@@ -94,6 +104,18 @@ public class SelectAnalysis implements PerfMeasure {
 
     public boolean hasSameSelects() {
         return sameSelectsNumber.isGreaterThan(Count.ZERO);
+    }
+
+    public List<String> getNPlusOneCallStack() {
+        return nPlusOneCallStack;
+    }
+
+    public List<String> getNPlusOneImpactedTables() {
+        return nPlusOneImpactedTables;
+    }
+
+    public String getNPlusOneQuery() {
+        return nPlusOneQuery;
     }
 
     @Override
