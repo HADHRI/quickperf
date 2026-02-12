@@ -42,15 +42,39 @@ public class SelectAnalysisExtractor implements ExtractablePerformanceMeasure<Sq
         String nPlusOneQuery = null;
         List<String> nPlusOneImpactedTables = null;
 
+        // Two-level call stack tracking:
+        // - parentOriginCallStack: the call stack from the query BEFORE the current
+        // pattern
+        // (e.g. the findAll that loaded parent entities)
+        // - currentPatternQuery: the current query pattern we're seeing
+        List<String> parentOriginCallStack = null;
+        List<String> currentPatternCallStack = null;
+        String currentPatternQuery = null;
+
         SqlSelects sqlSelects = new SqlSelects();
         for (SqlExecution sqlExecution : sqlExecutions) {
             for (QueryInfo query : sqlExecution.getQueries()) {
                 if (isSelectType(query)) {
+                    String queryAsString = query.getQuery();
+
+                    // When we see a NEW query pattern, save the previous pattern's stack
+                    // as the "parent origin" before overwriting
+                    if (currentPatternQuery == null || !currentPatternQuery.equals(queryAsString)) {
+                        parentOriginCallStack = currentPatternCallStack;
+                        currentPatternCallStack = sqlExecution.getCallStack();
+                        currentPatternQuery = queryAsString;
+                    }
+
                     if (!sameSelectTypesWithDifferentParamValues
                             && sqlSelects.sameSqlQueryWithDifferentParams(query)) {
                         sameSelectTypesWithDifferentParamValues = true;
-                        nPlusOneCallStack = sqlExecution.getCallStack();
-                        nPlusOneQuery = query.getQuery();
+
+                        // Merge: N+1 query stack (where lazy loading fires)
+                        // + parent origin stack (the query before, e.g. Service -> Repository flow)
+                        List<String> repeatedStack = sqlExecution.getCallStack();
+                        nPlusOneCallStack = mergeCallStacks(repeatedStack, parentOriginCallStack);
+
+                        nPlusOneQuery = queryAsString;
                         nPlusOneImpactedTables = org.quickperf.sql.SqlUtils.extractTableNames(nPlusOneQuery);
                     }
                     if (sqlSelects.exactlySameSqlQueryExists(query)) {
@@ -68,6 +92,34 @@ public class SelectAnalysisExtractor implements ExtractablePerformanceMeasure<Sq
         return new SelectAnalysis(selectNumber, sameSelectsNumber, sameSelectTypesWithDifferentParamValues,
                 nPlusOneCallStack, nPlusOneQuery, nPlusOneImpactedTables);
 
+    }
+
+    /**
+     * Merge the repeated query's call stack with the initial query's call stack.
+     * This produces a combined trace showing:
+     * - Where the lazy-loading N+1 fires (from repeated stack)
+     * - The full Service -> Repository flow (from initial stack)
+     */
+    private List<String> mergeCallStacks(List<String> repeatedStack, List<String> initialStack) {
+        if (repeatedStack == null && initialStack == null) {
+            return new ArrayList<>();
+        }
+        if (repeatedStack == null) {
+            return initialStack;
+        }
+        if (initialStack == null) {
+            return repeatedStack;
+        }
+
+        // Build merged list: start with repeated stack, then add unique entries from
+        // initial stack
+        List<String> merged = new ArrayList<>(repeatedStack);
+        for (String frame : initialStack) {
+            if (!merged.contains(frame)) {
+                merged.add(frame);
+            }
+        }
+        return merged;
     }
 
     private boolean isSelectType(QueryInfo query) {
