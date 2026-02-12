@@ -158,7 +158,7 @@
         <module>jvm</module>
         <module>sql</module>
         <module>spring</module>
-        <module>quick-perf-web</module>
+        <module>web</module>
     </modules>
 
     <profiles>
