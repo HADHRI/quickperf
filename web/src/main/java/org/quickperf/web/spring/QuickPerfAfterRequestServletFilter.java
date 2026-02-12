@@ -15,37 +15,29 @@ package org.quickperf.web.spring;
 import net.ttddyy.dsproxy.QueryInfo;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.quickperf.measure.BooleanMeasure;
+import org.quickperf.sql.SqlExecution;
 import org.quickperf.sql.SqlExecutions;
 import org.quickperf.sql.SqlRecorderRegistry;
-import org.quickperf.sql.bindparams.AllParametersAreBoundExtractor;
 import org.quickperf.sql.connection.ConnectionListenerRegistry;
 import org.quickperf.sql.select.analysis.SelectAnalysis;
 import org.quickperf.sql.select.analysis.SelectAnalysisExtractor;
 import org.quickperf.web.spring.config.*;
 import org.quickperf.web.spring.jvm.ByteWatcherSingleThread;
 import org.quickperf.web.spring.jvm.ByteWatcherSingleThreadRegistry;
-import org.quickperf.web.spring.testgeneration.JUnitVersion;
-import org.quickperf.web.spring.testgeneration.TestGenerator;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.qstd.QuickSqlTestData;
-import org.springframework.util.StringUtils;
 
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.text.DecimalFormat;
-import java.text.NumberFormat;
 import java.util.*;
-import java.util.function.Predicate;
-import java.util.stream.Collectors;
-
-import static java.lang.System.lineSeparator;
-import static org.quickperf.web.spring.QuickPerfBeforeRequestServletFilter.DiagnosticConnectionProfiler;
+import java.util.Map;
+import java.util.LinkedHashMap;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
@@ -53,38 +45,19 @@ public class QuickPerfAfterRequestServletFilter implements Filter {
 
     private final DatabaseConfig databaseConfig;
 
-    private final DatabaseHttpConfig databaseHttpConfig;
-
-    private final TestGenerationConfig testGenerationConfig;
-
-    private final QuickSqlTestData quickSqlTestData;
-
-    private final Collection<QuickPerfHttpCallWarningWriter> quickPerfHttpCallWarningWriters;
-
-    private final Collection<QuickPerfHttpCallInfoWriter> quickPerfHttpCallInfoWriters;
-
     private final Log logger = LogFactory.getLog(this.getClass());
-
-    private final ApplicationContext context;
 
     private final JvmConfig jvmConfig;
 
     private final UrlConfig urlConfig;
 
-    public QuickPerfAfterRequestServletFilter(DatabaseConfig databaseConfig, DatabaseHttpConfig databaseHttpConfig,
-            JvmConfig jvmConfig, TestGenerationConfig testGenerationConfig, QuickSqlTestData quickSqlTestData,
-            ApplicationContext context, Collection<QuickPerfHttpCallWarningWriter> quickPerfHttpCallWarningWriters,
-            Collection<QuickPerfHttpCallInfoWriter> quickPerfHttpCallInfoWriters, UrlConfig urlConfig) {
-        this.jvmConfig = jvmConfig;
+    public QuickPerfAfterRequestServletFilter(DatabaseConfig databaseConfig,
+            JvmConfig jvmConfig,
+            UrlConfig urlConfig) {
         this.databaseConfig = databaseConfig;
-        this.databaseHttpConfig = databaseHttpConfig;
-        this.testGenerationConfig = testGenerationConfig;
-        this.quickSqlTestData = quickSqlTestData;
-        this.quickPerfHttpCallWarningWriters = quickPerfHttpCallWarningWriters;
-        this.quickPerfHttpCallInfoWriters = quickPerfHttpCallInfoWriters;
+        this.jvmConfig = jvmConfig;
         this.urlConfig = urlConfig;
         logger.debug(this.getClass().getSimpleName() + "is created");
-        this.context = context;
     }
 
     @Override
@@ -98,9 +71,6 @@ public class QuickPerfAfterRequestServletFilter implements Filter {
         Throwable problem = null;
 
         HttpServletResponse httpServletResponse = (HttpServletResponse) servletResponse;
-        if (testGenerationConfig.isTestGenerationEnabled()) {
-            httpServletResponse = new CopyHttpServletResponse(servletResponse);
-        }
 
         try {
             filterChain.doFilter(servletRequest, httpServletResponse);
@@ -157,32 +127,6 @@ public class QuickPerfAfterRequestServletFilter implements Filter {
     private void quickPerfProcessing(HttpServletRequest httpServletRequest, HttpServletResponse httpServletResponse)
             throws Exception {
 
-        Report warnReport = new Report(httpServletRequest, httpServletResponse);
-        Report infoReport = new Report(httpServletRequest, httpServletResponse);
-
-        if (jvmConfig.isHeapAllocationMeasured() || jvmConfig.isHeapAllocationThresholdDetected()) {
-            ByteWatcherSingleThread byteWatcherSingleThread = ByteWatcherSingleThreadRegistry.INSTANCE.get();
-            long allocationInBytes = byteWatcherSingleThread.calculateAllocations();
-
-            if (jvmConfig.isHeapAllocationThresholdDetected()) {
-                int thresholdInBytes = jvmConfig.getHeapAllocationThresholdValueInBytes();
-                if (allocationInBytes > thresholdInBytes) {
-                    NumberFormat allocationFormat = buildNumberFormatWithGrouping();
-                    String heapAllocationExceededMessage = "\t* [WARNING] Heap allocation is greater than "
-                            + allocationFormat.format(thresholdInBytes) + " bytes: "
-                            + allocationFormat.format(allocationInBytes) + " bytes";
-                    warnReport.append(lineSeparator() + heapAllocationExceededMessage);
-                }
-            }
-
-            if (jvmConfig.isHeapAllocationMeasured()) {
-                NumberFormat allocationFormat = buildNumberFormatWithGrouping();
-                infoReport.append(lineSeparator() + "* HEAP ALLOCATION: " + allocationFormat.format(allocationInBytes)
-                        + " bytes");
-            }
-
-        }
-
         SqlExecutionsRecorder sqlExecutionsRecorder = SqlRecorderRegistry.INSTANCE
                 .getSqlRecorderOfType(SqlExecutionsRecorder.class);
 
@@ -193,174 +137,96 @@ public class QuickPerfAfterRequestServletFilter implements Filter {
             sqlExecutions = sqlExecutionsRecorder.findRecord(null);
         }
 
-        if (databaseConfig.isSelectedColumnsDisplayed()) {
-            SelectStatsListener selectStatsListener = SqlRecorderRegistry.INSTANCE
-                    .getSqlRecorderOfType(SelectStatsListener.class);
-            String selectedColumns = selectStatsListener.getColumnsByTableBySchemaAsString();
-            infoReport.append(lineSeparator());
-            infoReport.append("* SELECTED COLUMNS");
-            infoReport.append(lineSeparator());
-            infoReport.append(selectedColumns);
-        }
+        // --- JSON Logging for OpenSearch ---
+        try {
+            ObjectMapper objectMapper = new ObjectMapper();
+            long timestamp = System.currentTimeMillis();
+            String reqUrl = httpServletRequest.getRequestURI();
+            String reqMethod = httpServletRequest.getMethod();
 
-        if (databaseConfig.isSqlDisplayed()) {
-            String sqlExecutionsAsString = sqlExecutions.toString();
-            if (!StringUtils.isEmpty(sqlExecutionsAsString)) {
-                infoReport.append(lineSeparator());
-                infoReport.append("* SQL");
-                infoReport.append(lineSeparator());
-                String sqlExecutionsWithoutThreeLastLineBreaks = sqlExecutionsAsString.substring(0,
-                        sqlExecutionsAsString.length() - 3);
-                infoReport.append(sqlExecutionsWithoutThreeLastLineBreaks);
+            // 1. JVM Metrics
+            if (jvmConfig.isHeapAllocationMeasured() || jvmConfig.isHeapAllocationThresholdDetected()) {
+                ByteWatcherSingleThread byteWatcherSingleThread = ByteWatcherSingleThreadRegistry.INSTANCE.get();
+                long allocationInBytes = byteWatcherSingleThread.calculateAllocations();
+
+                Map<String, Object> jvmData = new LinkedHashMap<>();
+                jvmData.put("timestamp", timestamp);
+                jvmData.put("type", "JVM_METRICS");
+                jvmData.put("url", reqUrl);
+                jvmData.put("method", reqMethod);
+                jvmData.put("heap_allocation_bytes", allocationInBytes);
+
+                if (jvmConfig.isHeapAllocationThresholdDetected()) {
+                    jvmData.put("threshold_bytes", jvmConfig.getHeapAllocationThresholdValueInBytes());
+                    jvmData.put("threshold_exceeded",
+                            allocationInBytes > jvmConfig.getHeapAllocationThresholdValueInBytes());
+                }
+
+                Log jvmLogger = LogFactory.getLog("org.quickperf.jvm");
+                jvmLogger.info(objectMapper.writeValueAsString(jvmData));
             }
-        }
 
-        if (databaseConfig.isDatabaseConnectionProfiled()) {
-            DiagnosticConnectionProfiler diagnosticConnectionProfiler = ConnectionListenerRegistry.INSTANCE
-                    .getConnectionListenerOfType(DiagnosticConnectionProfiler.class);
-            diagnosticConnectionProfiler.stop();
+            if (sqlExecutions != null) {
+                // 2. Slow Queries
+                if (databaseConfig.isSqlExecutionTimeDetected()) {
+                    LongDbRequestsListener longDbRequestsListener = SqlRecorderRegistry.INSTANCE
+                            .getSqlRecorderOfType(LongDbRequestsListener.class);
+                    SqlExecutions slowExecutions = longDbRequestsListener.getSqlExecutionsGreaterOrEqualToThreshold();
 
-            infoReport.append(lineSeparator());
-            infoReport.append("* DATABASE CONNECTION PROFILING");
-            infoReport.append(lineSeparator());
-            String profilingConnectionResult = diagnosticConnectionProfiler.getProfilingResult();
-            infoReport.append(profilingConnectionResult);
-        }
+                    if (!slowExecutions.isEmpty()) {
+                        Map<String, Object> slowQueryData = new LinkedHashMap<>();
+                        slowQueryData.put("timestamp", timestamp);
+                        slowQueryData.put("type", "SLOW_QUERY_DETECTED");
+                        slowQueryData.put("url", reqUrl);
+                        slowQueryData.put("method", reqMethod);
+                        slowQueryData.put("threshold_ms", databaseConfig.getSqlExecutionTimeThresholdInMilliseconds());
 
-        List<HttpCall> externalHttpCalls = SynchronousHttpCallsRegistry.INSTANCE.getHttpCalls();
+                        List<Map<String, Object>> queries = new ArrayList<>();
+                        for (SqlExecution execution : slowExecutions) {
+                            for (QueryInfo q : execution.getQueries()) {
+                                Map<String, Object> qData = new LinkedHashMap<>();
+                                qData.put("sql", q.getQuery());
+                                qData.put("time_ms", execution.getElapsedTime());
+                                // Extract simple call stack info if available, or just first line
+                                List<String> stack = execution.getCallStack();
+                                if (stack != null && !stack.isEmpty()) {
+                                    qData.put("caller", stack.get(0));
+                                }
+                                queries.add(qData);
+                            }
+                        }
+                        slowQueryData.put("queries", queries);
 
-        if (databaseConfig.isSqlExecutionTimeDetected()) {
-            int sqlExecutionThresholdInMilliseconds = databaseConfig.getSqlExecutionTimeThresholdInMilliseconds();
-            LongDbRequestsListener longDbRequestsListener = SqlRecorderRegistry.INSTANCE
-                    .getSqlRecorderOfType(LongDbRequestsListener.class);
-            SqlExecutions sqlExecutionsGreaterOrEqualToThreshold = longDbRequestsListener
-                    .getSqlExecutionsGreaterOrEqualToThreshold();
-            if (!sqlExecutionsGreaterOrEqualToThreshold.isEmpty()) {
-                warnReport.append(
-                        lineSeparator() + "\t* [WARNING] At least one SQL query has an execution time greater than "
-                                + sqlExecutionThresholdInMilliseconds + " ms");
-                String longQueriesAsString = sqlExecutionsGreaterOrEqualToThreshold.toString();
-                String longQueriesAsStringWithoutThreeLastLineBreaks = longQueriesAsString.substring(0,
-                        longQueriesAsString.length() - 3);
-                warnReport.append(lineSeparator() + longQueriesAsStringWithoutThreeLastLineBreaks);
-            }
-        }
+                        Log slowQueryLogger = LogFactory.getLog("org.quickperf.slowquery");
+                        slowQueryLogger.warn(objectMapper.writeValueAsString(slowQueryData));
+                    }
+                }
 
-        if (databaseConfig.isNPlusOneSelectDetected()) {
+                // 3. N+1 Detection
+                if (databaseConfig.isNPlusOneSelectDetected()) {
+                    SelectAnalysis selectAnalysis = SelectAnalysisExtractor.INSTANCE
+                            .extractPerfMeasureFrom(sqlExecutions);
+                    if (selectAnalysis.getSameSelectTypesWithDifferentParamValues().evaluate()) {
+                        Map<String, Object> nPlusOneData = new LinkedHashMap<>();
+                        nPlusOneData.put("timestamp", timestamp);
+                        nPlusOneData.put("type", "N_PLUS_ONE_DETECTED");
+                        nPlusOneData.put("url", reqUrl);
+                        nPlusOneData.put("method", reqMethod);
+                        nPlusOneData.put("count", selectAnalysis.getSelectNumber().getValue());
+                        nPlusOneData.put("sample_query", selectAnalysis.getNPlusOneQuery());
+                        nPlusOneData.put("impacted_tables", selectAnalysis.getNPlusOneImpactedTables());
+                        nPlusOneData.put("call_stack", selectAnalysis.getNPlusOneCallStack());
 
-            SelectAnalysis selectAnalysis = SelectAnalysisExtractor.INSTANCE.extractPerfMeasureFrom(sqlExecutions);
-
-            if (selectAnalysis.getSameSelectTypesWithDifferentParamValues().evaluate()) {
-                Long selectNumber = selectAnalysis.getSelectNumber().getValue();
-                if (selectNumber.shortValue() >= databaseConfig.getNPlusOneSelectDetectionThreshold()) {
-                    warnReport.append(
-                            lineSeparator() + "\t* [WARNING] N+1 select suspicion" + " - " + selectNumber + " SELECT");
+                        Log nPlusOneLogger = LogFactory.getLog("org.quickperf.nplusone");
+                        nPlusOneLogger.warn(objectMapper.writeValueAsString(nPlusOneData));
+                    }
                 }
             }
 
+        } catch (Exception e) {
+            logger.warn("Failed to log QuickPerf JSON data", e);
         }
 
-        if (databaseConfig.isSqlExecutionDetected()) {
-            int sqlExecutionThreshold = databaseConfig.getSqlExecutionThreshold();
-            int numberOfExecutions = sqlExecutions.getNumberOfExecutions();
-
-            if (numberOfExecutions > sqlExecutionThreshold) {
-                warnReport.append(lineSeparator() + "\t* [WARNING] You have reached your SQL executions threshold"
-                        + " : " + numberOfExecutions + " > " + sqlExecutionThreshold);
-            }
-
-        }
-
-        if (databaseConfig.isSqlWithoutBindParamDetected()) {
-            BooleanMeasure hasBoundParams = AllParametersAreBoundExtractor.INSTANCE
-                    .extractPerfMeasureFrom(sqlExecutions);
-            if (!hasBoundParams.getValue()) {
-                warnReport
-                        .append(lineSeparator() + "\t* [WARNING] Some of your SQL queries don't use bind parameters.");
-            }
-        }
-
-        detectPerfAntiPatterns(externalHttpCalls, warnReport);
-
-        String contentType = httpServletResponse.getContentType();
-        HttpContentType httpContentType = new HttpContentType(contentType);
-
-        // Filter HTTP content type as soon as possible
-        if (testGenerationConfig.isTestGenerationEnabled()
-                && (httpContentType.isJson() || httpContentType.isText() || httpContentType.isHtml())) {
-
-            SelectListener selectListener = SqlRecorderRegistry.INSTANCE.getSqlRecorderOfType(SelectListener.class);
-
-            CopyHttpServletResponse copyHttpServletResponse = (CopyHttpServletResponse) httpServletResponse;
-            String content = copyHttpServletResponse.extractContentAsString();
-            List<QueryInfo> selectQueries = selectListener.getSelectQueries();
-
-            String relativeHttUrl = HttpUrlRetriever.INSTANCE.findRelativeUrlFrom(httpServletRequest);
-
-            Application application = Application.from(context);
-
-            if (testGenerationConfig.isJunit5GenerationEnabled()) {
-                String testGenerationReport = TestGenerator.INSTANCE.generateJUnitTestForGet(selectQueries,
-                        relativeHttUrl, application, contentType, content, testGenerationConfig, quickSqlTestData,
-                        JUnitVersion.VERSION_5);
-                infoReport.append(lineSeparator());
-                infoReport.append(testGenerationReport);
-            }
-
-        }
-
-        unregisterListeners();
-
-        warnReport.writeWith(quickPerfHttpCallWarningWriters);
-        infoReport.writeWith(quickPerfHttpCallInfoWriters);
-
-    }
-
-    private NumberFormat buildNumberFormatWithGrouping() {
-        NumberFormat numberFormat = DecimalFormat.getInstance();
-        numberFormat.setGroupingUsed(true);
-        return numberFormat;
-    }
-
-    private void detectPerfAntiPatterns(List<HttpCall> externalHttpCalls, Report warnReport) {
-        Deque<PerfEvent> perfEvents = PerfEventsRegistry.INSTANCE.getPerfEvents();
-
-        Deque<PerfEvent> httpCallBetweenConnectionGetAndClosePattern = new ArrayDeque<>();
-        httpCallBetweenConnectionGetAndClosePattern.add(PerfEvent.GET_DB_CONNECTION);
-        httpCallBetweenConnectionGetAndClosePattern.add(PerfEvent.SYNCHRONOUS_HTTP_CALL);
-        httpCallBetweenConnectionGetAndClosePattern.add(PerfEvent.CLOSE_DB_CONNECTION);
-
-        Deque<PerfEvent> httpCallBetweenConnectionGetAndCommitPattern = new ArrayDeque<>();
-        httpCallBetweenConnectionGetAndCommitPattern.add(PerfEvent.GET_DB_CONNECTION);
-        httpCallBetweenConnectionGetAndCommitPattern.add(PerfEvent.SYNCHRONOUS_HTTP_CALL);
-        httpCallBetweenConnectionGetAndCommitPattern.add(PerfEvent.DB_COMMIT);
-
-        while (!perfEvents.isEmpty()) {
-            PerfEvent perfEvent = perfEvents.poll();
-            processPattern(httpCallBetweenConnectionGetAndClosePattern, perfEvent);
-            processPattern(httpCallBetweenConnectionGetAndCommitPattern, perfEvent);
-        }
-
-        if (databaseHttpConfig.isSynchronousHttpCallBetweenDbConnectionGottenAndClosedDetected()
-                && httpCallBetweenConnectionGetAndClosePattern.isEmpty()) {
-            warnReport.append(lineSeparator()
-                    + "\t* [WARNING] Synchronous HTTP call while the application maintains the DB connection (between the time the DB connection is gotten from the data source and closed)");
-        }
-
-        if (httpCallBetweenConnectionGetAndClosePattern.isEmpty()
-                || httpCallBetweenConnectionGetAndCommitPattern.isEmpty()) {
-            warnReport.append(lineSeparator() + "\t* Synchronous HTTP calls");
-            for (HttpCall httpCall : externalHttpCalls) {
-                warnReport.append(lineSeparator() + "\t\t* " + httpCall);
-            }
-        }
-
-    }
-
-    private void processPattern(Deque<PerfEvent> pattern, PerfEvent perfEvent) {
-        if (perfEvent.equals(pattern.peek())) {
-            pattern.poll();
-        }
     }
 
 }

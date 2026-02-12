@@ -36,9 +36,15 @@ public class SqlExecutions implements Iterable<SqlExecution>, ViewablePerfRecord
         sqlExecutions.addLast(sqlExecution);
     }
 
-    // Workaround: avoid duplicate call to retrieveNumberOfReturnedColumns within SqlExecution constructor
-    // in add method by forcing the column count. Related commit https://github.com/quick-perf/quickperf/issues/141
-    private void addWithoutCall(ExecutionInfo executionInfo, List<QueryInfo> queries){
+    public void add(SqlExecution sqlExecution) {
+        sqlExecutions.addLast(sqlExecution);
+    }
+
+    // Workaround: avoid duplicate call to retrieveNumberOfReturnedColumns within
+    // SqlExecution constructor
+    // in add method by forcing the column count. Related commit
+    // https://github.com/quick-perf/quickperf/issues/141
+    private void addWithoutCall(ExecutionInfo executionInfo, List<QueryInfo> queries) {
         SqlExecution sqlExecution = new SqlExecution(executionInfo, queries, 0);
         sqlExecutions.addLast(sqlExecution);
     }
@@ -57,7 +63,7 @@ public class SqlExecutions implements Iterable<SqlExecution>, ViewablePerfRecord
                 }
             }
 
-            if(added){
+            if (added) {
                 filteredSqlExecutions.addWithoutCall(execution.getExecutionInfo(), queries);
             }
         }
@@ -102,7 +108,7 @@ public class SqlExecutions implements Iterable<SqlExecution>, ViewablePerfRecord
                 QueryTypeRetriever queryTypeRetriever = QueryTypeRetriever.INSTANCE;
                 if (queryTypeRetriever.typeOf(query) == QueryType.UPDATE) {
                     long updatedColumnCount = countUpdatedColumn(query.getQuery());
-                    if(minColumnCount == 0 || updatedColumnCount < minColumnCount) {
+                    if (minColumnCount == 0 || updatedColumnCount < minColumnCount) {
                         minColumnCount = updatedColumnCount;
                     }
                     if (updatedColumnCount > maxColumnCount) {
@@ -128,15 +134,15 @@ public class SqlExecutions implements Iterable<SqlExecution>, ViewablePerfRecord
 
     /**
      * Examples :
-     *  - "SET isbn = ?, title = ? " returns 2
-     *  - "SET isbn = '123', title = '1 + 1 = 0' " returns 2
+     * - "SET isbn = ?, title = ? " returns 2
+     * - "SET isbn = '123', title = '1 + 1 = 0' " returns 2
      */
     private long countUnquotedEquals(String setClause) {
         boolean inQuote = false;
         long equalCounter = 0;
         for (char c : setClause.toCharArray()) {
             if (c == '\'') {
-               inQuote = !inQuote;
+                inQuote = !inQuote;
             }
             if (!inQuote && c == '=') {
                 equalCounter++;
@@ -160,17 +166,17 @@ public class SqlExecutions implements Iterable<SqlExecution>, ViewablePerfRecord
     public String format(Collection<PerfIssue> perfIssues) {
         String standardFormatting = PerfIssuesFormat.STANDARD.format(perfIssues);
 
-        if(SystemProperties.SIMPLIFIED_SQL_DISPLAY.evaluate()) {
+        if (SystemProperties.SIMPLIFIED_SQL_DISPLAY.evaluate()) {
             return standardFormatting;
         }
 
-        return    standardFormatting
+        return standardFormatting
                 + System.lineSeparator()
                 + System.lineSeparator()
                 + "[JDBC QUERY EXECUTION (executeQuery, executeBatch, ...)]"
                 + System.lineSeparator()
                 + (noJdbcExecution() ? new DataSourceConfig().getMessage()
-                                     : toString());
+                        : toString());
     }
 
     private boolean noJdbcExecution() {

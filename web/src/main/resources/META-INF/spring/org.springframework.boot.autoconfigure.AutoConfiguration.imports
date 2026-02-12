@@ -1,0 +1,2 @@
+org.quickperf.web.spring.WebLiveAutoconfiguration
+org.quickperf.web.spring.DatasourceProxyAutoConfiguration

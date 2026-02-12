@@ -22,24 +22,16 @@ import org.springframework.context.annotation.Import;
 
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
-@Import({ DatabaseConfig.class
-        , JvmConfig.class
-        , DatabaseHttpConfig.class
-        , TestGenerationConfig.class
-        , QuickPerfBeforeRequestServletFilter.class
-        , QuickPerfAfterRequestServletFilter.class
-        , QuickPerfHttpCallHttpCallWarningLogger.class
-        , QuickPerfHttpCallHttpCallInfoLogger.class
-        , ExternalHttCallInterceptionConfig.class
-		, UrlConfig.class
+@Import({ DatabaseConfig.class, JvmConfig.class, DatabaseHttpConfig.class, TestGenerationConfig.class,
+		QuickPerfBeforeRequestServletFilter.class, QuickPerfAfterRequestServletFilter.class,
+		ExternalHttCallInterceptionConfig.class, UrlConfig.class
 })
-@ConditionalOnProperty(value = "quickperf.enabled")
+@ConditionalOnProperty(value = "quickperf.enabled", matchIfMissing = true)
 public class WebLiveAutoconfiguration {
 
 	private static final Log LOGGER = LogFactory.getLog(WebLiveAutoconfiguration.class);
 
 	private final UrlConfig urlConfig;
-
 
 	{
 		LOGGER.info("Quickperf Live is enabled");
@@ -47,8 +39,7 @@ public class WebLiveAutoconfiguration {
 
 	public WebLiveAutoconfiguration(UrlConfig urlConfig) {
 		this.urlConfig = urlConfig;
-		LOGGER.info("Quickperf excluded urls: "  + urlConfig.getExcludedUrls());
+		LOGGER.info("Quickperf excluded urls: " + urlConfig.getExcludedUrls());
 	}
-
 
 }
