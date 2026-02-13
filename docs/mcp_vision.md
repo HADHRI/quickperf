@@ -1,195 +1,182 @@
 # QuickPerf AI Auto-Fix — MCP Vision
 
-> How a single JSON alert becomes a code fix + regression test, automatically.
+> From detection to automated fix — how it works today, and how MCP evolves it.
 
 ---
 
-## 1. MCP Architecture — QuickPerf as Context Server
+## Part 1 — What We Built Today (Pipeline)
 
-The key insight: **the LLM doesn't know your code**. It needs structured context. This is where the MCP (Model Context Protocol) vision comes in — QuickPerf acts as the **context provider**, feeding the AI everything it needs to produce accurate fixes.
+Our POC is a **pipeline** — Java code controls every step, the LLM just receives a prompt and returns text.
+
+### Architecture
 
 ```mermaid
 flowchart LR
-    subgraph Detection["Runtime Detection"]
-        QP["QuickPerf<br/>Servlet Filter"]
+    subgraph YourCode["ai-tool (Java app you run)"]
+        direction TB
+        A1["1. Read alert.json"]
+        A2["2. ContextBuilder<br/>scans project files"]
+        A3["3. PromptBuilder<br/>assembles prompt"]
+        A4["4. Send prompt to LLM"]
+        A5["5. Parse response<br/>write fix files"]
+        A1 --> A2 --> A3 --> A4 --> A5
     end
 
-    subgraph MCP["MCP Layer — Context Protocol"]
-        ALERT["📋 JSON Alert<br/>type · url · query · tables · call_stack"]
-        CTX["🧠 Context Builder<br/>Discovers source files<br/>from alert metadata"]
-        PROMPT["📝 Prompt Assembler<br/>Alert + Source Code<br/>→ Structured Request"]
-    end
+    LLM["☁️ LLM (gptoss)<br/>Receives text<br/>Returns text"]
 
-    subgraph AI["AI Agent"]
-        LLM["🤖 LLM<br/>Analyzes entities<br/>Generates fix"]
-    end
+    A4 -->|"prompt text"| LLM
+    LLM -->|"fix text"| A5
 
-    subgraph Output["Deliverables"]
-        FIX["✏️ Fixed Code"]
-        TEST["🧪 Regression Test"]
-    end
-
-    QP -->|"Structured JSON"| ALERT
-    ALERT --> CTX
-    CTX -->|"5 files found"| PROMPT
-    PROMPT -->|"System + User prompt"| LLM
-    LLM --> FIX
-    LLM --> TEST
+    style YourCode fill:#1a2744,stroke:#3b82f6,stroke-width:2px,color:#e2e8f0
+    style LLM fill:#2d1535,stroke:#a855f7,stroke-width:2px,color:#e2e8f0
 ```
 
-### Why MCP Matters
-
-| Without MCP | With MCP (QuickPerf) |
-|-------------|----------------------|
-| Dev manually pastes code into ChatGPT | **Automatic** — alert triggers the pipeline |
-| LLM guesses which files matter | **Precise** — Context Builder finds exact files from `call_stack` + `impacted_tables` |
-| No guarantee of fix quality | **Guided** — system prompt teaches fix patterns |
-| Fix is lost after the chat | **Permanent** — regression test prevents recurrence |
+> **The LLM is passive.** It does NOT call tools, does NOT decide what to read. Your Java code gathers everything upfront and sends one big prompt.
 
 ---
 
-## 2. Step-by-Step: From JSON to Fix
+## Part 2 — The MCP Evolution (Future)
 
-### Step 1 — QuickPerf Produces the Alert
+With MCP, the LLM **takes control**. It decides what information to gather by calling tools.
 
-When `GET /users` executes, QuickPerf detects 26 SELECTs (1 parent + 25 children):
+### The 3 Actors
+
+```mermaid
+flowchart LR
+    HOST["🖥️ MCP HOST<br/>(your Java app)<br/><br/>• Starts the process<br/>• Relays messages<br/>• Executes tool calls"]
+
+    LLM["🧠 LLM<br/>(gptoss / GPT)<br/><br/>• Thinks<br/>• Decides which<br/>  tools to call<br/>• Generates the fix"]
+
+    MCP["🔧 MCP SERVER<br/>(QuickPerf tools)<br/><br/>• get_alert·id·<br/>• find_entity·table·<br/>• read_file·path·<br/>• create_pr·files·"]
+
+    HOST <-->|"API calls<br/>(prompt + tool results)"| LLM
+    HOST <-->|"JSON-RPC<br/>(tool exec)"| MCP
+
+    style HOST fill:#1a2744,stroke:#3b82f6,stroke-width:2px,color:#e2e8f0
+    style LLM fill:#2d1535,stroke:#a855f7,stroke-width:2px,color:#e2e8f0
+    style MCP fill:#0f2918,stroke:#22c55e,stroke-width:2px,color:#e2e8f0
+```
+
+> [!IMPORTANT]
+> The LLM **never talks directly** to the MCP Server. The Host sits in the middle and relays everything.
+
+### How a Tool Call Works
+
+```mermaid
+sequenceDiagram
+    participant Host as 🖥️ HOST (your app)
+    participant LLM as 🧠 LLM
+    participant MCP as 🔧 MCP SERVER
+
+    Note over Host: You start the process
+
+    Host->>LLM: "Available tools: [get_alert, find_entity, read_file, create_pr]<br/>User says: Fix N+1 alert #42"
+
+    LLM->>Host: I want to call: get_alert(42)
+
+    Host->>MCP: Execute: get_alert(42)
+    MCP->>Host: Result: {type: N_PLUS_ONE, tables: [address], ...}
+
+    Host->>LLM: Tool result: {type: N_PLUS_ONE, tables: [address]}
+
+    LLM->>Host: I want to call: find_entity("address")
+
+    Host->>MCP: Execute: find_entity("address")
+    MCP->>Host: Result: Address.java contents
+
+    Host->>LLM: Tool result: Address.java with @ManyToOne User
+
+    LLM->>Host: I want to call: read_file("User.java")
+
+    Host->>MCP: Execute: read_file("User.java")
+    MCP->>Host: Result: User.java contents
+
+    Host->>LLM: Tool result: User.java with @OneToMany EAGER
+
+    Note over LLM: LLM now has enough context.<br/>It generates the fix.
+
+    LLM->>Host: FINAL ANSWER:<br/>Change EAGER→LAZY + add @EntityGraph
+
+    Note over Host: Done! Host writes the fix files.
+```
+
+---
+
+## Part 3 — A-to-Z Example with verification-app
+
+### Step 0: The problem exists
+
+```java
+// User.java
+@OneToMany(mappedBy = "user", fetch = FetchType.EAGER) // ← THE BUG
+private List<Address> addresses;
+```
+
+A developer calls `GET /users` → 26 SQL queries fire instead of 1.
+
+### Step 1: QuickPerf detects it
+
+QuickPerf (embedded as servlet filter) counts queries and produces:
 
 ```json
 {
   "type": "N_PLUS_ONE_DETECTED",
   "url": "/users",
   "method": "GET",
-  "operation_name": "getAllUsers",
   "count": 26,
   "sample_query": "select a1_0.user_id, a1_0.id, a1_0.city from address a1_0 where a1_0.user_id=?",
   "impacted_tables": ["address"],
   "call_stack": [
     "com.example.testapp.controller.UserController.getUsers(UserController.java:49)",
-    "com.example.testapp.service.UserService.getAllUsers(UserService.java:21)",
-    "org.springframework.data.jpa.repository.support.SimpleJpaRepository.findAll(SimpleJpaRepository.java:383)"
+    "com.example.testapp.service.UserService.getAllUsers(UserService.java:21)"
   ]
 }
 ```
 
-> [!NOTE]
-> This JSON is machine-readable. It can be indexed in OpenSearch, trigger Slack alerts, **and** feed the AI tool — all from the same output.
+### Step 2: Alert saved to file
 
-### Step 2 — Context Builder Discovers Your Code
-
-The tool takes the JSON + project root. **Zero configuration needed.**
-
-```
-📥 Input: alert.json + /path/to/verification-app
-
-🔍 Parsing call_stack...
-   "UserController.java:49"  → scanning project tree → ✅ Found
-   "UserService.java:21"     → scanning project tree → (not present in demo)
-
-🔍 Finding entities from impacted_tables: ["address"]
-   Scanning all .java files for @Entity with @Table(name="address")
-   → Address.java ✅
-
-🔍 Scanning entity relationships...
-   Address.java has @ManyToOne User → scanning for User.java
-   → User.java ✅
-
-🔍 Finding repositories from imports...
-   UserController imports UserRepository → ✅
-   UserController imports AddressRepository → ✅
-
-📦 Result: 5 source files gathered
-   1. UserController.java  (from call_stack)
-   2. Address.java          (from impacted_tables)
-   3. User.java             (from @ManyToOne relationship)
-   4. UserRepository.java   (from imports)
-   5. AddressRepository.java (from imports)
+```bash
+# Copy from logs → alert.json
 ```
 
-### Step 3 — Prompt Assembly
+### Step 3: AI tool runs (our POC pipeline)
 
-Two prompts are built:
-
-**System prompt** — teaches the LLM how to be a JPA performance expert:
-- What an N+1 is
-- How to diagnose from alert metadata
-- 4 fix strategies: `@EntityGraph`, `JOIN FETCH`, `@BatchSize`, `FetchType.LAZY`
-- Response format with complete file contents
-
-**User prompt** — pure data, no opinions:
-
-```markdown
-## N+1 Alert Details
-- **Endpoint**: GET /users
-- **Repeated query count**: 26
-- **Sample query**: `select a1_0.user_id, a1_0.id, a1_0.city
-                     from address a1_0 where a1_0.user_id=?`
-- **Impacted tables**: [address]
-- **Call stack**: [UserController → UserService → findAll]
-
-## Source Code
-### UserController.java
-[complete file: shows findAll() + loop accessing getAddresses()]
-
-### User.java
-[complete file: shows @OneToMany(fetch = FetchType.EAGER)]
-
-### Address.java
-[complete file: shows @ManyToOne User]
-
-### UserRepository.java
-[complete file: extends JpaRepository]
-
-### AddressRepository.java
-[complete file: extends JpaRepository]
-
-## Task
-Fix the N+1 issue. Provide modified files and a regression test.
+```bash
+java -jar ai-tool.jar alert.json /path/to/verification-app
 ```
 
-> [!IMPORTANT]
-> The prompt contains **zero assumptions** about the fix. The LLM must analyze the entity relationship (`FetchType.EAGER` on `@OneToMany`) and decide the best strategy. The tool works on **any** project.
+**What happens inside:**
 
----
+```
+ContextBuilder reads alert.json
+  → Parses call_stack → finds UserController.java
+  → Parses impacted_tables ["address"] → finds Address.java
+  → Scans Address.java → sees @ManyToOne User → finds User.java
+  → Scans imports → finds UserRepository.java, AddressRepository.java
 
-## 3. LLM Response — Concrete Fix for verification-app
+PromptBuilder assembles:
+  System: "You are a JPA expert. Fix strategies: @EntityGraph, JOIN FETCH..."
+  User: "Alert: 26 queries on /users \n Code: [5 files] \n Fix it."
 
-### Analysis (by LLM)
+LLM receives prompt → returns:
+  "Analysis: FetchType.EAGER causes N+1
+   Fix: EAGER→LAZY + @EntityGraph on UserRepository.findAll()
+   [complete modified files + regression test]"
 
-> The root cause is in `User.java`:
-> ```java
-> @OneToMany(mappedBy = "user", fetch = FetchType.EAGER)
-> private List<Address> addresses;
-> ```
-> `FetchType.EAGER` forces Hibernate to load all addresses immediately.
-> Since `findAll()` is not aware of this, it fires **1 query per user** to load their addresses.
->
-> **Impact**: 1 + 25 = 26 queries for what should be 1.
+AiFixerService parses response → writes files to ./fix-output/
+```
 
-### Fix Strategy (by LLM)
+### Step 4: Review the fix
 
-> Two changes:
-> 1. Change `FetchType.EAGER` → `FetchType.LAZY` on `User.addresses` (don't load unless needed)
-> 2. Add `@EntityGraph(attributePaths = {"addresses"})` on `UserRepository.findAll()` to tell Hibernate to use a single JOIN query when we **do** need addresses
-
-### Fixed Files
-
-#### User.java — Before vs After
+#### User.java — one line changed
 
 ```diff
- @Entity
- @Table(name = "users")
- public class User {
-     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
-     private Long id;
-     private String name;
-
 -    @OneToMany(mappedBy = "user", fetch = FetchType.EAGER)
 +    @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
      private List<Address> addresses;
- }
 ```
 
-#### UserRepository.java — Before vs After
+#### UserRepository.java — one method added
 
 ```diff
  public interface UserRepository extends JpaRepository<User, Long> {
@@ -200,23 +187,24 @@ Fix the N+1 issue. Provide modified files and a regression test.
  }
 ```
 
-### SQL Result
+### Step 5: SQL result
 
-| Before (26 queries) | After (1 query) |
-|---------------------|-----------------|
-| `SELECT * FROM users` | `SELECT u.*, a.* FROM users u LEFT OUTER JOIN address a ON u.id = a.user_id` |
-| 25× `SELECT * FROM address WHERE user_id=?` | — |
+| Before | After |
+|--------|-------|
+| 1× `SELECT * FROM users` | 1× `SELECT u.*, a.* FROM users u LEFT JOIN address a ON ...` |
+| + 25× `SELECT * FROM address WHERE user_id=?` | — |
+| **26 queries, ~250ms** | **1 query, ~10ms** |
 
 ---
 
-## 4. Regression Test — No-Regression with Hypersistence Utils
+## Part 4 — Regression Test with Hypersistence Utils
 
-The LLM also generates an **integration test** that will permanently prevent this N+1 from returning. We use [Hypersistence Utils](https://github.com/vladmihalcea/hypersistence-utils) by Vlad Mihalcea — the standard library for asserting SQL query counts in Hibernate applications.
+The LLM also generates a test that **permanently prevents** this N+1 from returning.
 
-### Maven Dependencies
+### Dependencies
 
 ```xml
-<!-- Hypersistence Utils — SQL statement counting -->
+<!-- SQL statement counting (by Vlad Mihalcea) -->
 <dependency>
     <groupId>io.hypersistence</groupId>
     <artifactId>hypersistence-utils-hibernate-63</artifactId>
@@ -224,7 +212,7 @@ The LLM also generates an **integration test** that will permanently prevent thi
     <scope>test</scope>
 </dependency>
 
-<!-- DataSource Proxy — intercepts SQL at JDBC level -->
+<!-- JDBC proxy to intercept queries -->
 <dependency>
     <groupId>net.ttddyy</groupId>
     <artifactId>datasource-proxy</artifactId>
@@ -233,36 +221,9 @@ The LLM also generates an **integration test** that will permanently prevent thi
 </dependency>
 ```
 
-### ProxyDataSource Configuration (Test)
+### The Test
 
 ```java
-@TestConfiguration
-public class DataSourceProxyConfig {
-
-    @Bean
-    public DataSource dataSource(DataSource originalDataSource) {
-        return ProxyDataSourceBuilder.create(originalDataSource)
-                .countQuery()
-                .build();
-    }
-}
-```
-
-### The Integration Test
-
-```java
-package com.example.testapp;
-
-import io.hypersistence.utils.jdbc.validator.SQLStatementCountValidator;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
-
-import static org.assertj.core.api.Assertions.assertThat;
-
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
 class UserEndpointNPlusOneTest {
 
@@ -275,85 +236,74 @@ class UserEndpointNPlusOneTest {
     }
 
     @Test
-    void getUsers_shouldExecuteExactlyOneSelect() {
-        // When — call the endpoint that was triggering N+1
+    void getUsers_shouldNotTriggerNPlusOne() {
+        // Call the endpoint
         var response = restTemplate.getForEntity("/users", String.class);
-
-        // Then — assert response is OK
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
 
-        // Then — assert ONLY 1 SELECT was executed (no N+1!)
+        // Assert: exactly 1 SELECT, no N+1!
         SQLStatementCountValidator.assertSelectCount(1);
-
-        // No inserts, updates, or deletes expected
-        SQLStatementCountValidator.assertInsertCount(0);
-        SQLStatementCountValidator.assertUpdateCount(0);
-        SQLStatementCountValidator.assertDeleteCount(0);
     }
 }
 ```
 
-### What This Test Guarantees
+### What happens in CI
 
 ```
-✅ Passes after fix:   1 SELECT (JOIN FETCH)
-❌ Fails if N+1 returns: "Expected 1 SELECT but got 26"
+✅ After fix:      1 SELECT  → assertSelectCount(1) PASSES
+❌ If N+1 returns: 26 SELECTs → assertSelectCount(1) FAILS → BUILD BREAKS
 ```
 
 > [!CAUTION]
-> This test will **break the build** if anyone reintroduces the N+1.
-> That's exactly what we want — the fix becomes a permanent guardrail.
+> **Every fixed N+1 becomes a permanent guardrail.** If anyone changes the entity mapping back to EAGER, the test fails and the build breaks.
 
 ---
 
-## 5. The Full Pipeline — Vision
+## Part 5 — Full Vision Pipeline
 
 ```mermaid
-sequenceDiagram
-    participant App as 🟢 App + QuickPerf
-    participant OS as 🔎 OpenSearch
-    participant AI as 🤖 AI Agent (MCP)
-    participant Git as 📦 Git / Bitbucket
-    participant CI as ⚙️ CI/CD
-    participant Dev as 👨‍💻 Developer
+flowchart TB
+    subgraph L1["🔍 LAYER 1 — Detection"]
+        APP["Spring Boot App<br/>+ QuickPerf Filter"]
+    end
 
-    Note over App: User hits GET /users
+    subgraph L2["📡 LAYER 2 — Alerting"]
+        OS["OpenSearch<br/>JSON logs indexed"]
+        SLACK["🔔 Slack / Email"]
+    end
 
-    App->>OS: JSON log: N_PLUS_ONE_DETECTED<br/>{count: 26, tables: [address]}
+    subgraph L3["🤖 LAYER 3 — Auto-Fix"]
+        direction TB
+        HOST["MCP Host (ai-tool)"]
+        LLM2["LLM (gptoss)"]
+        TOOLS["MCP Server<br/>QuickPerf Tools"]
+        HOST <--> LLM2
+        HOST <--> TOOLS
+    end
 
-    OS->>AI: 🔔 Alert trigger
+    subgraph L4["🛡️ LAYER 4 — Prevention"]
+        PR["Pull Request<br/>fix + test"]
+        CI["CI/CD<br/>assertSelectCount·1·"]
+    end
 
-    AI->>AI: Context Builder<br/>→ discovers 5 source files
+    APP -->|"JSON alert"| OS
+    OS -->|"alert trigger"| SLACK
+    SLACK -->|"triggers"| HOST
+    LLM2 -->|"generates"| PR
+    PR --> CI
 
-    AI->>AI: Prompt Builder<br/>→ alert + code → structured prompt
-
-    AI->>AI: LLM call<br/>→ analysis + fix + test
-
-    AI->>Git: 📝 Create PR<br/>• User.java (LAZY)<br/>• UserRepository.java (@EntityGraph)<br/>• UserEndpointNPlusOneTest.java
-
-    Git->>Dev: PR notification
-
-    Dev->>Dev: Review: 2 lines changed + 1 test
-
-    Dev->>Git: ✅ Approve & merge
-
-    Git->>CI: Build triggered
-
-    CI->>CI: SQLStatementCountValidator<br/>assertSelectCount(1) ✅
-
-    Note over CI: 🛡️ Future changes protected<br/>Any N+1 regression = build failure
+    style L1 fill:#1a2744,stroke:#3b82f6,stroke-width:2px,color:#e2e8f0
+    style L2 fill:#2d1f0e,stroke:#f59e0b,stroke-width:2px,color:#e2e8f0
+    style L3 fill:#2d1535,stroke:#a855f7,stroke-width:2px,color:#e2e8f0
+    style L4 fill:#0f2918,stroke:#22c55e,stroke-width:2px,color:#e2e8f0
 ```
-
----
 
 ## Summary
 
-| Step | Component | Input | Output |
-|------|-----------|-------|--------|
-| **1. Detect** | QuickPerf (servlet filter) | HTTP request | JSON alert with `call_stack`, `impacted_tables`, `sample_query` |
-| **2. Alert** | OpenSearch | JSON log | Slack/email notification |
-| **3. Build Context** | AI Tool (Context Builder) | Alert JSON + project path | 5 discovered source files |
-| **4. Generate Prompt** | AI Tool (Prompt Builder) | Alert + source code | System prompt + user prompt |
-| **5. Fix** | LLM (via MCP) | Structured prompt | Fixed `User.java` + `UserRepository.java` |
-| **6. Test** | LLM (via MCP) | Same prompt | `UserEndpointNPlusOneTest.java` with Hypersistence Utils |
-| **7. Guard** | CI/CD | Test suite | `assertSelectCount(1)` — permanent protection |
+| Step | Who | Does what |
+|------|-----|-----------|
+| **Detect** | QuickPerf (servlet filter) | Counts queries → produces JSON alert |
+| **Alert** | OpenSearch → Slack | Notifies team |
+| **Fix** | ai-tool → LLM | Reads alert + code → generates fix |
+| **Test** | LLM | Generates Hypersistence Utils regression test |
+| **Guard** | CI/CD | `assertSelectCount(1)` — blocks any N+1 regression |
