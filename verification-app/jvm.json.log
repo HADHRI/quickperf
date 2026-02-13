@@ -1,0 +1,1 @@
+{"timestamp":1770921772130,"type":"JVM_METRICS","url":"/users","method":"GET","heap_allocation_bytes":13916136,"threshold_bytes":100000,"threshold_exceeded":true}

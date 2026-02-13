@@ -159,6 +159,7 @@
         <module>sql</module>
         <module>spring</module>
         <module>web</module>
+        <module>verification-app</module>
     </modules>
 
     <profiles>

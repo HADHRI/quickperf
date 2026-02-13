@@ -1,0 +1,50 @@
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Appender for QuickPerf N+1 JSON logs -->
+    <appender name="N_PLUS_ONE_FILE" class="ch.qos.logback.core.FileAppender">
+        <file>n-plus-one.json.log</file>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Appender for QuickPerf Slow Query JSON logs -->
+    <appender name="SLOW_QUERY_FILE" class="ch.qos.logback.core.FileAppender">
+        <file>slow-query.json.log</file>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Appender for QuickPerf JVM JSON logs -->
+    <appender name="JVM_FILE" class="ch.qos.logback.core.FileAppender">
+        <file>jvm.json.log</file>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="org.quickperf.nplusone" level="WARN" additivity="false">
+        <appender-ref ref="N_PLUS_ONE_FILE" />
+        <appender-ref ref="STDOUT" />
+    </logger>
+
+    <logger name="org.quickperf.slowquery" level="WARN" additivity="false">
+         <appender-ref ref="SLOW_QUERY_FILE" />
+         <appender-ref ref="STDOUT" />
+    </logger>
+
+    <logger name="org.quickperf.jvm" level="INFO" additivity="false">
+        <appender-ref ref="JVM_FILE" />
+        <appender-ref ref="STDOUT" />
+    </logger>
+
+    <root level="INFO">
+        <appender-ref ref="STDOUT" />
+    </root>
+</configuration>
