@@ -143,6 +143,7 @@ public class QuickPerfAfterRequestServletFilter implements Filter {
             long timestamp = System.currentTimeMillis();
             String reqUrl = httpServletRequest.getRequestURI();
             String reqMethod = httpServletRequest.getMethod();
+            String operationName = httpServletResponse.getHeader("X-Operation-Name");
 
             // 1. JVM Metrics
             if (jvmConfig.isHeapAllocationMeasured() || jvmConfig.isHeapAllocationThresholdDetected()) {
@@ -154,6 +155,9 @@ public class QuickPerfAfterRequestServletFilter implements Filter {
                 jvmData.put("type", "JVM_METRICS");
                 jvmData.put("url", reqUrl);
                 jvmData.put("method", reqMethod);
+                if (operationName != null) {
+                    jvmData.put("operation_name", operationName);
+                }
                 jvmData.put("heap_allocation_bytes", allocationInBytes);
 
                 if (jvmConfig.isHeapAllocationThresholdDetected()) {
@@ -179,6 +183,9 @@ public class QuickPerfAfterRequestServletFilter implements Filter {
                         slowQueryData.put("type", "SLOW_QUERY_DETECTED");
                         slowQueryData.put("url", reqUrl);
                         slowQueryData.put("method", reqMethod);
+                        if (operationName != null) {
+                            slowQueryData.put("operation_name", operationName);
+                        }
                         slowQueryData.put("threshold_ms", databaseConfig.getSqlExecutionTimeThresholdInMilliseconds());
 
                         List<Map<String, Object>> queries = new ArrayList<>();
@@ -212,6 +219,9 @@ public class QuickPerfAfterRequestServletFilter implements Filter {
                         nPlusOneData.put("type", "N_PLUS_ONE_DETECTED");
                         nPlusOneData.put("url", reqUrl);
                         nPlusOneData.put("method", reqMethod);
+                        if (operationName != null) {
+                            nPlusOneData.put("operation_name", operationName);
+                        }
                         nPlusOneData.put("count", selectAnalysis.getSelectNumber().getValue());
                         nPlusOneData.put("sample_query", selectAnalysis.getNPlusOneQuery());
                         nPlusOneData.put("impacted_tables", selectAnalysis.getNPlusOneImpactedTables());
